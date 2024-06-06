@@ -1,0 +1,38 @@
+body {
+  font-family: Arial, sans-serif;
+}
+
+.App {
+  text-align: center;
+}
+
+.login-page, .register-page, .dashboard-page, .anonymize-page, .reports-page, .admin-dashboard-page {
+  margin: 20px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+form div {
+  margin-bottom: 10px;
+}
+
+form label {
+  margin-right: 10px;
+}
+
+form button {
+  align-self: center;
+}
+
+.schema ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.schema li {
+  margin-left: 20px;
+}

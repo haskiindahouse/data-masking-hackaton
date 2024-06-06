@@ -137,12 +137,5 @@ To design this service, we will need to break down the requirements and identify
 2. Implement service configuration settings.
 3. (Optional) Implement a monitoring dashboard.
 
-### Next Steps
-
-Would you like to start with the implementation of the Authentication Module or do you have any specific part you'd like to focus on first?
-
-#### Hotkeys:
-- **W: Yes, Continue** - Confirm, advance to next step, proceed, again
-- **A: Alt** - 2-3 alternative approaches, compare & rank
-- **S: Explain** - Explain each line of code step by step, adding descriptive comments
-- **D: Iterate, Improve, Evolve** - Note 3 critiques or edge cases, propose improvements 1,2,3
+## How to run
+`docker-compose up --build`
