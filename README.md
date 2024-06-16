@@ -7,3 +7,4 @@ INSTALL STEPS:
 4. python manage.py makemigrations
 5. python manage.py createsuperuser (create admin to your system)
 6. python manage.py runserver
+*Алгоритмы маскирования находятся в коллабах в папке masking_pii_data*
