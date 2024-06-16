@@ -1,4 +1,4 @@
-INSTALL STEPS:
+# INSTALL STEPS
 0. open terminal
 1. python installed on your device
 1. cd test_project/
