@@ -1,0 +1,11 @@
+psycopg2
+sqlalchemy
+python-dotenv
+ipython
+pandas
+faker
+blake3
+pyblake2
+tqdm
+flask
+mimesis

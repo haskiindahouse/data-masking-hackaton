@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Postgres Visualization</title>
+    <script src="https://unpkg.com/gojs@3.0.4/release/go.js"></script>
+    <style>
+        #selectedTablesList {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        #selectedTablesList li {
+            padding: 5px;
+            margin: 2px;
+            background-color: lightgrey;
+            cursor: pointer;
+        }
+
+        #selectedTablesList li:hover {
+            background-color: darkgrey;
+        }
+    </style>
+</head>
+<body>
+    <h1>Postgres Visualization</h1>
+    <div>
+        <h2>Select Database</h2>
+        <select id="dbDropdown" onchange="loadTables(this.value)">
+            <option value="">Select a database</option>
+        </select>
+    </div>
+    <div>
+        <h2>Select Tables from <span id="currentDb"></span></h2>
+        <select id="tableDropdown" multiple size="10">
+            <option value="">Select tables</option>
+        </select>
+        <button onclick="selectAllTables()">Select All</button>
+        <button onclick="loadTableStructures()">Load Selected Tables</button>
+        <button onclick="backToDatabases()">Back to Databases</button>
+    </div>
+    <div>
+        <h2>Table Structure</h2>
+        <div id="myDiagramDiv" style="width: 100%; height: 600px; border: 1px solid black;"></div>
+    </div>
+    <div>
+        <h2>Selected Tables</h2>
+        <ul id="selectedTablesList"></ul>
+        <button onclick="addSelectedTables()">Add Selected Tables</button>
+        <button onclick="clearSelectedTables()">Clear All</button>
+    </div>
+    <div>
+        <label for="theme">Theme:</label>
+        <select id="theme" onchange="changeTheme()">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+    </div>
+    <script>
+        let selectedTables = new Set();
+        let myDiagram;
+
+        function loadDatabases() {
+            fetch('/databases')
+                .then(response => response.json())
+                .then(data => {
+                    const dbDropdown = document.getElementById('dbDropdown');
+                    dbDropdown.innerHTML = '<option value="">Select a database</option>';
+                    data.forEach(db => {
+                        const option = document.createElement('option');
+                        option.value = db;
+                        option.textContent = db;
+                        dbDropdown.appendChild(option);
+                    });
+                });
+        }
+
+        function loadTables(db) {
+            document.getElementById('currentDb').textContent = db;
+            fetch(`/tables?db_name=${db}`)
+                .then(response => response.json())
+                .then(data => {
+                    const tableDropdown = document.getElementById('tableDropdown');
+                    tableDropdown.innerHTML = '';
+                    data.forEach(table => {
+                        const option = document.createElement('option');
+                        option.value = table;
+                        option.textContent = table;
+                        tableDropdown.appendChild(option);
+                    });
+                });
+        }
+
+        function selectAllTables() {
+            const tableDropdown = document.getElementById('tableDropdown');
+            for (let i = 0; i < tableDropdown.options.length; i++) {
+                tableDropdown.options[i].selected = true;
+            }
+        }
+
+        function backToDatabases() {
+            document.getElementById('currentDb').textContent = '';
+            document.getElementById('tableDropdown').innerHTML = '<option value="">Select a table</option>';
+            loadDatabases();
+        }
+
+        function loadTableStructures() {
+            const db = document.getElementById('dbDropdown').value;
+            const tableDropdown = document.getElementById('tableDropdown');
+            const selectedOptions = Array.from(tableDropdown.selectedOptions).map(option => option.value);
+
+            Promise.all(selectedOptions.map(table =>
+                fetch(`/table_structure?db_name=${db}&table_name=${table}`)
+                    .then(response => response.json())
+            )).then(data => {
+                initDiagram(data);
+            });
+        }
+
+        function initDiagram(dataArray) {
+            const $ = go.GraphObject.make;
+
+            if (myDiagram) {
+                myDiagram.clear(); // Clear the diagram before adding new nodes and links
+            } else {
+                myDiagram = $(go.Diagram, 'myDiagramDiv', {
+                    'undoManager.isEnabled': true
+                });
+            }
+
+            const itemTempl = $(go.Panel,
+                'Horizontal',
+                { margin: new go.Margin(2, 0) },
+                $(go.Shape,
+                    { desiredSize: new go.Size(15, 15), strokeWidth: 0, margin: new go.Margin(0, 5, 0, 0) },
+                    new go.Binding('figure', 'figure'),
+                    new go.Binding('fill', 'color')
+                ),
+                $(go.TextBlock,
+                    { font: '14px sans-serif' },
+                    new go.Binding('text', 'name'),
+                    new go.Binding('font', 'iskey', (k) => (k ? 'italic 14px sans-serif' : '14px sans-serif')),
+                    new go.Binding('stroke', 'color')
+                )
+            );
+
+            const nodeDataArray = dataArray.map(data => ({
+                key: data.table_name,
+                items: data.columns.map(col => ({
+                    name: col[0],
+                    figure: 'Rectangle',
+                    color: 'lightblue'
+                })),
+                inheritedItems: data.foreign_keys.map(fk => ({
+                    name: fk[0],
+                    figure: 'Decision',
+                    color: 'purple'
+                }))
+            }));
+
+            const linkDataArray = dataArray.flatMap(data =>
+                data.foreign_keys.map(fk => ({
+                    from: data.table_name,
+                    to: fk[1],
+                    text: fk[2]
+                }))
+            );
+
+            myDiagram.nodeTemplate = $(go.Node,
+                'Auto',
+                {
+                    selectionAdorned: true,
+                    resizable: true,
+                    layoutConditions: go.LayoutConditions.Standard & ~go.LayoutConditions.NodeSized,
+                    fromSpot: go.Spot.LeftRightSides,
+                    toSpot: go.Spot.LeftRightSides,
+                },
+                new go.Binding('location', 'location').makeTwoWay(),
+                new go.Binding('desiredSize', 'visible', (v) => new go.Size(NaN, NaN)).ofObject('LIST'),
+                $(go.Shape, 'RoundedRectangle', { strokeWidth: 3 }, new go.Binding('fill', 'primary')),
+                $(go.Panel,
+                    'Table',
+                    { margin: 8, stretch: go.Stretch.Fill },
+                    $(go.RowColumnDefinition, { row: 0, sizing: go.Sizing.None }),
+                    $(go.TextBlock,
+                        {
+                            row: 0,
+                            alignment: go.Spot.Center,
+                            margin: new go.Margin(0, 24, 0, 2),
+                            font: 'bold 18px sans-serif',
+                        },
+                        new go.Binding('text', 'key'),
+                        new go.Binding('stroke', 'color')
+                    ),
+                    $('PanelExpanderButton',
+                        'LIST',
+                        { row: 0, alignment: go.Spot.TopRight },
+                        new go.Binding('stroke', 'color')
+                    ),
+                    $(go.Panel,
+                        'Table',
+                        { name: 'LIST', row: 1, alignment: go.Spot.TopLeft },
+                        $(go.TextBlock,
+                            'Attributes',
+                            {
+                                row: 0,
+                                alignment: go.Spot.Left,
+                                margin: new go.Margin(3, 24, 3, 2),
+                                font: 'bold 15px sans-serif',
+                            },
+                            new go.Binding('stroke', 'color')
+                        ),
+                        $('PanelExpanderButton', 'NonInherited', { row: 0, alignment: go.Spot.Right }, new go.Binding('stroke', 'color')),
+                        $(go.Panel,
+                            'Vertical',
+                            {
+                                row: 1,
+                                name: 'NonInherited',
+                                alignment: go.Spot.TopLeft,
+                                defaultAlignment: go.Spot.Left,
+                                itemTemplate: itemTempl,
+                            },
+                            new go.Binding('itemArray', 'items')
+                        ),
+                        $(go.TextBlock,
+                            'Inherited Attributes',
+                            {
+                                row: 2,
+                                alignment: go.Spot.Left,
+                                margin: new go.Margin(3, 24, 3, 2),
+                                font: 'bold 15px sans-serif',
+                            },
+                            new go.Binding('visible', 'inheritedItems', (arr) => Array.isArray(arr) && arr.length > 0),
+                            new go.Binding('stroke', 'color')
+                        ),
+                        $('PanelExpanderButton',
+                            'Inherited',
+                            { row: 2, alignment: go.Spot.Right },
+                            new go.Binding('visible', 'inheritedItems', (arr) => Array.isArray(arr) && arr.length > 0),
+                            new go.Binding('stroke', 'color')
+                        ),
+                        $(go.Panel,
+                            'Vertical',
+                            {
+                                row: 3,
+                                name: 'Inherited',
+                                alignment: go.Spot.TopLeft,
+                                defaultAlignment: go.Spot.Left,
+                                itemTemplate: itemTempl,
+                            },
+                            new go.Binding('itemArray', 'inheritedItems')
+                        )
+                    )
+                )
+            );
+
+            myDiagram.linkTemplate = $(go.Link,
+                {
+                    selectionAdorned: true,
+                    layerName: 'Background',
+                    reshapable: true,
+                    routing: go.Routing.AvoidsNodes,
+                    corner: 5,
+                    curve: go.Curve.JumpOver,
+                },
+                $(go.Shape,
+                    { strokeWidth: 3 },
+                    new go.Binding('stroke', 'color')
+                ),
+                $(go.TextBlock,
+                    {
+                        textAlign: 'center',
+                        font: 'bold 14px sans-serif',
+                        segmentIndex: 0,
+                        segmentOffset: new go.Point(NaN, NaN),
+                        segmentOrientation: go.Orientation.Upright,
+                    },
+                    new go.Binding('text', 'text'),
+                    new go.Binding('stroke', 'color')
+                ),
+                $(go.TextBlock,
+                    {
+                        textAlign: 'center',
+                        font: 'bold 14px sans-serif',
+                        segmentIndex: -1,
+                        segmentOffset: new go.Point(NaN, NaN),
+                        segmentOrientation: go.Orientation.Upright,
+                    },
+                    new go.Binding('text', 'toText'),
+                    new go.Binding('stroke', 'color')
+                )
+            );
+
+            myDiagram.model = new go.GraphLinksModel({
+                copiesArrays: true,
+                copiesArrayObjects: true,
+                nodeDataArray: nodeDataArray,
+                linkDataArray: linkDataArray
+            });
+
+            changeTheme(); // Set the initial theme
+        }
+
+        function addSelectedTables() {
+            const selectedNodes = myDiagram.selection.filter(node => node instanceof go.Node);
+            selectedNodes.each(node => {
+                selectedTables.add(node.data.key);
+            });
+            updateSelectedTablesText();
+        }
+
+        function updateSelectedTablesText() {
+            const selectedList = document.getElementById('selectedTablesList');
+            selectedList.innerHTML = '';
+            selectedTables.forEach(table => {
+                const li = document.createElement('li');
+                li.textContent = table;
+                li.onclick = () => {
+                    selectedTables.delete(table);
+                    updateSelectedTablesText();
+                };
+                selectedList.appendChild(li);
+            });
+        }
+
+        function clearSelectedTables() {
+            selectedTables.clear();
+            updateSelectedTablesText();
+        }
+
+        function changeTheme() {
+            const myDiagram = go.Diagram.fromDiv('myDiagramDiv');
+            if (myDiagram) {
+                myDiagram.model.startTransaction("change theme");
+                const theme = document.getElementById('theme').value;
+                const colorPalette = {
+                    primary: '#4a4a4a',
+                    green: '#429e6f',
+                    blue: '#3f9fc6',
+                    purple: '#9951c9',
+                    red: '#ff4d3d',
+                };
+                const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
+
+                myDiagram.model.nodeDataArray.forEach(node => {
+                    myDiagram.model.setDataProperty(node, 'primary', colorPalette.primary);
+                    myDiagram.model.setDataProperty(node, 'color', textColor);
+                    node.items.forEach(item => {
+                        item.color = colorPalette.blue;
+                    });
+                    node.inheritedItems.forEach(item => {
+                        item.color = colorPalette.purple;
+                    });
+                });
+
+                myDiagram.model.linkDataArray.forEach(link => {
+                    link.color = colorPalette.red;
+                });
+
+                myDiagram.model.commitTransaction("change theme");
+            }
+        }
+
+        window.onload = loadDatabases;
+    </script>
+</body>
+</html>
